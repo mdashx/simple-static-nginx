@@ -1,0 +1,7 @@
+.env
+conf.d/*
+html/*
+docker-compose.yml
+letsencrypt.sh
+*tmp*
+commit.txt
