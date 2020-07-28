@@ -1,39 +1,24 @@
-################
-# Install Docker
-################
+###############
+# Install Nginx
+###############
 
-# You should probably install Docker following instructions for your
-# distro, but if you happen to be on Ubuntu, this command might work for
-# you.
+.PHONY: nginx
+nginx:
+	ssh ${USER}@${HOST} 'sudo apt-get update'
+	ssh ${USER}@${HOST} 'sudo apt-get install -y nginx'
+	ssh ${USER}@${HOST} 'sudo systemctl start nginx'
+	ssh ${USER}@${HOST} 'sudo systemctl status nginx'
 
-.PHONY:
-docker:
-	ssh -t root@${HOST} 'apt update'
-	ssh -t root@${HOST} 'apt upgrade'
-	ssh -t root@${HOST} 'apt install docker.io'
-	ssh root@${HOST} 'systemctl unmask docker && systemctl enable --now docker'
-	ssh root@${HOST} 'usermod -aG docker ${USER}'
+.PHONY: nginx-conf
+nginx-conf:
+	ssh ${USER}@${HOST} 'mkdir -p /home/${USER}/${WORKING_DIR}'
+	scp nginx.conf ${USER}@${HOST}:/home/${USER}/${WORKING_DIR}/nginx.conf
+	ssh ${USER}@${HOST} 'sudo cp ${WORKING_DIR}/nginx.conf /etc/nginx/nginx.conf'
 
-
-#########################
-# Docker/Nginx Management
-#########################
-
-.PHONY: compose
-compose:
-	cp docker-compose.tpl.yml docker-compose.yml
-	sed -i 's/{{ CONTAINER_NAME }}/${CONTAINER_NAME}/' docker-compose.yml
-
-.PHONY: start
-start:
-	ssh ${USER}@${HOST} 'cd /home/${USER}/${WORKING_DIR} && docker-compose up -d'
-
-.PHONY: stop
-stop:
-	ssh ${USER}@${HOST} 'docker kill ${CONTAINER_NAME}'
-
-.PHONY: restart
-restart: stop start
+.PHONY: nginx-restart
+nginx-restart:
+	ssh ${USER}@${HOST} 'sudo systemctl restart nginx'
+	ssh ${USER}@${HOST} 'sudo systemctl status nginx'
 
 
 ############################
@@ -61,22 +46,29 @@ redirect: content
 	sed -i 's/{{ TARGET }}/${TARGET}/' conf.d/${HOST_DOMAIN}.conf
 
 
-.PHONY: copy
-copy:
+# Install our site config on server with self-signed SSL cert
+.PHONY: site-install
+site-install:
 	ssh ${USER}@${HOST} 'mkdir -p /home/${USER}/${WORKING_DIR}'
 	ssh ${USER}@${HOST} 'mkdir -p /home/${USER}/${WORKING_DIR}/conf.d/'
 	ssh ${USER}@${HOST} 'mkdir -p /home/${USER}/${WORKING_DIR}/html/'
-	ssh ${USER}@${HOST} 'mkdir -p /home/${USER}/${WORKING_DIR}/certbot/conf'
-	ssh ${USER}@${HOST} 'mkdir -p /home/${USER}/${WORKING_DIR}/certbot/www'
 
 	scp conf.d/${HOST_DOMAIN}.conf \
 		${USER}@${HOST}:/home/${USER}/${WORKING_DIR}/conf.d/${HOST_DOMAIN}.conf
+	ssh ${USER}@${HOST} 'sudo cp ${WORKING_DIR}/conf.d/${HOST_DOMAIN}.conf /etc/nginx/conf.d/${HOST_DOMAIN}.conf'
 
 	rsync -avzh --delete html/${HOST_DOMAIN} \
 		${USER}@${HOST}:/home/${USER}/${WORKING_DIR}/html
 
-	scp nginx.conf ${USER}@${HOST}:/home/${USER}/${WORKING_DIR}/nginx.conf
-	scp docker-compose.yml ${USER}@${HOST}:/home/${USER}/${WORKING_DIR}/docker-compose.yml
+	ssh ${USER}@${HOST} 'sudo rsync --recursive --delete ${WORKING_DIR}/html/${HOST_DOMAIN} /usr/share/nginx/html'
+
+	cp self-signed-cert.tpl.sh self-signed-cert.sh
+	sed -i 's/{{ HOST_DOMAIN }}/${HOST_DOMAIN}/' self-signed-cert.sh
+	scp self-signed-cert.sh ${USER}@${HOST}:/home/${USER}/${WORKING_DIR}
+	ssh ${USER}@${HOST} -t 'cd /home/${USER}/${WORKING_DIR} && sudo bash self-signed-cert.sh'
+
+	ssh ${USER}@${HOST} 'sudo systemctl restart nginx'
+	ssh ${USER}@${HOST} 'sudo systemctl status nginx'
 
 
 ##################
@@ -85,20 +77,25 @@ copy:
 
 .PHONY: cert
 cert:
-	cp letsencrypt.tpl.sh letsencrypt.sh
-	sed -i 's/{{ HOST_DOMAIN }}/${HOST_DOMAIN}/' letsencrypt.sh
-	sed -i 's/{{ EMAIL }}/${EMAIL}/' letsencrypt.sh
-	scp letsencrypt.sh ${USER}@${HOST}:/home/${USER}/${WORKING_DIR}
-	ssh ${USER}@${HOST} -t 'cd /home/${USER}/${WORKING_DIR} && bash letsencrypt.sh'
-	rm letsencrypt.sh
+	ssh ${USER}@${HOST}	'sudo apt-get update'
+	ssh ${USER}@${HOST}	'sudo apt-get install software-properties-common'
+	ssh ${USER}@${HOST}	'sudo add-apt-repository universe'
+	ssh ${USER}@${HOST}	'sudo apt-get update'
+	ssh ${USER}@${HOST}	'sudo apt-get install certbot python3-certbot-nginx'
+
+	cp letsencrypt-signed-cert.tpl.sh letsencrypt-signed-cert.sh
+	sed -i 's/{{ EMAIL }}/${EMAIL}/' letsencrypt-signed-cert.sh
+	sed -i 's/{{ HOST_DOMAIN }}/${HOST_DOMAIN}/' letsencrypt-signed-cert.sh
+	scp letsencrypt-signed-cert.sh ${USER}@${HOST}:/home/${USER}/${WORKING_DIR}
+	ssh ${USER}@${HOST} -t 'cd /home/${USER}/${WORKING_DIR} && sudo bash letsencrypt-signed-cert.sh'
 
 
-#####################################################
-# Do the whole process (assuming Docker is installed)
-#####################################################
+########################################################
+# Do the whole process (assuming Nginx is already setup)
+########################################################
 
 .PHONY: site-entire
-site-entire: compose site copy start cert
+site-entire: content site site-install cert nginx-restart
 
 .PHONY: redirect-entire
-redirect-entire: compose redirect copy start cert
+redirect-entire: content redirect site-install cert nginx-restart

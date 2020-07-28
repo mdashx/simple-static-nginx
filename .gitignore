@@ -5,3 +5,5 @@ docker-compose.yml
 letsencrypt.sh
 *tmp*
 commit.txt
+self-signed-cert.sh
+letsencrypt-signed-cert.sh
