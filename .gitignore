@@ -3,6 +3,7 @@ conf.d/*
 html/*
 docker-compose.yml
 letsencrypt.sh
+letsencrypt-renew.sh
 *tmp*
 commit.txt
 self-signed-cert.sh

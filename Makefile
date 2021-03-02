@@ -90,6 +90,7 @@ cert:
 	ssh ${USER}@${HOST} -t 'cd /home/${USER}/${WORKING_DIR} && sudo bash letsencrypt-signed-cert.sh'
 
 
+
 ########################################################
 # Do the whole process (assuming Nginx is already setup)
 ########################################################
@@ -99,3 +100,15 @@ site-entire: content site site-install cert nginx-restart
 
 .PHONY: redirect-entire
 redirect-entire: content redirect site-install cert nginx-restart
+
+
+################
+# Renew SSL Cert
+################
+.PHONY: renew-cert
+renew-cert:
+	cp letsencrypt-renew.tpl.sh letsencrypt-renew.sh
+	sed -i 's/{{ HOST_DOMAIN }}/${HOST_DOMAIN}/' letsencrypt-renew.sh
+	scp letsencrypt-renew.sh ${USER}@${HOST}:/home/${USER}/${WORKING_DIR}
+	ssh ${USER}@${HOST} -t 'cd /home/${USER}/${WORKING_DIR} && sudo bash letsencrypt-renew.sh'
+
